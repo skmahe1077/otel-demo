@@ -1,0 +1,17 @@
+# Custom values for open-telemetry/opentelemetry-demo Helm chart
+# Ref: https://opentelemetry.io/docs/demo/kubernetes-deployment/
+
+# Expose Grafana, Jaeger, and Prometheus via frontend-proxy
+components:
+  frontend-proxy:
+    service:
+      type: ClusterIP
+
+# Grafana – anonymous admin so no login needed during the talk
+grafana:
+  grafana.ini:
+    auth.anonymous:
+      enabled: true
+      org_role: Admin
+    auth:
+      disable_login_form: true
