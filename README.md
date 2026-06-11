@@ -1,4 +1,4 @@
-# Getting Started with OpenTelemetry – OTel Night Birmingham
+# Getting Started with OpenTelemetry on Amazon EKS: Signals, Instrumentation, and Zero-Code Observability
 
 A conference demo deploying the **official OpenTelemetry Demo** on Amazon EKS.
 The demo ships 15+ microservices (Go, Python, Java, .NET, JS, Rust, etc.) with
