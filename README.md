@@ -54,7 +54,7 @@ scripts/            create-cluster.sh, setup.sh, break.sh, heal.sh, teardown.sh
 ### 2. Access the UIs
 
 ```bash
-kubectl --namespace otel-demo port-forward svc/my-otel-demo-frontendproxy 8080:8080
+kubectl --namespace otel-demo port-forward svc/frontend-proxy 8080:8080
 ```
 
 Open in your browser:

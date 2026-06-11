@@ -12,7 +12,7 @@
 - [ ] OTel demo is deployed: `kubectl get pods -n otel-demo` (29 pods Running)
 - [ ] Port-forward is active:
   ```bash
-  kubectl -n otel-demo port-forward svc/my-otel-demo-frontendproxy 8080:8080 &
+  kubectl -n otel-demo port-forward svc/frontend-proxy 8080:8080 &
   ```
 - [ ] Browser tabs pre-opened:
   - Web Store: http://localhost:8080/
