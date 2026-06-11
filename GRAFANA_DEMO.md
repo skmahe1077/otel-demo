@@ -6,6 +6,11 @@
 kubectl -n otel-demo port-forward svc/frontend-proxy 8080:8080
 ```
 
+**Datasources (pre-provisioned):**
+- **Jaeger** (uid: `webstore-traces`) — distributed traces from 20 services
+- **Prometheus** (uid: `webstore-metrics`) — spanmetrics + runtime metrics + collector metrics
+- **OpenSearch** (uid: `webstore-logs`) — application logs (~42k+ records and growing)
+
 ---
 
 ## Scene 1: Demo Dashboard – The Big Picture (5 min)
@@ -16,23 +21,29 @@ kubectl -n otel-demo port-forward svc/frontend-proxy 8080:8080
 
 ### What to point out:
 
-**Top row – Spanmetrics (RED Metrics):**
-- **Requests Rate by Span Name** — "Every bar is a service operation. You can see the load generator is driving steady traffic across all services."
-- **Error Rate by Span Name** — "Right now everything is green – no errors. We'll change that soon."
-- **Average Duration by Span Name** — "All operations are completing in milliseconds. Note the relative sizes – some operations are naturally slower."
+**Row 1 – Spanmetrics (RED Metrics):**
+- **Requests Rate by Span Name** — timeseries showing request throughput per operation. The busiest operations are `GET` (frontend), `oteldemo.ProductCatalogService/GetProduct`, `valkey-cart:6379` (cache), and `POST /api/cart`. The load generator is driving steady traffic.
+- **Error Rate by Span Name** — timeseries of error rates. In a healthy state, most are flat at zero. You may see small blips from `resolveBoolean` / `resolveFloat` (flagd evaluation) — these are normal.
+- **Average Duration by Span Name** — timeseries of p50 latencies. Most operations are under 100ms.
 
-**Middle row – Application Logs:**
-- **Log Records by Severity** — "OpenTelemetry also collects logs. You can see INFO, WARN, ERROR counts over time."
-- **Log Records (100 recent entries)** — "These logs are correlated with traces – click any log line and you can jump to the exact trace."
+**Row 2 – Application Log Records:**
+- **Log Records by Severity** — a table from OpenSearch showing counts by severity (INFO, WARN, ERROR). This is a live count from the `otel-logs-*` index.
+- **Log Records (100 recent entries)** — the last 100 log lines from all services. These logs are correlated with traces via trace IDs.
 
-**Bottom row – Application Metrics:**
-- **Python services (CPU%, Memory)** — "Runtime metrics from the Python services – recommendation, quote services."
-- **Java/.NET metrics** — "Same for Java and .NET services – all collected via OTel SDK."
+**Row 3 – Application Metrics:**
+- **Python services (CPU%)** — CPU utilization for Python services: `recommendation`, `load-generator`, `product-reviews`. Shows both system and user CPU time via `process_runtime_cpython_cpu_time_seconds_total`.
+- **Python services (Memory)** — RSS memory usage. Currently: recommendation ~57 MB, load-generator ~88 MB, product-reviews ~99 MB.
+- **Recommendations Rate** — `app_recommendations_counter_total` showing catalog recommendation throughput.
+- **Quote Service batch span processor** — `otel_trace_span_processor_spans` showing how the quote service's span processor is performing.
+
+**Row 4 – Service Dependency:**
+- **Service Dependency** — a node graph powered by Jaeger showing service-to-service call relationships. Shows the full topology: frontend → checkout → payment, shipping, cart, currency, email, etc.
 
 ### Live demo action:
 1. Set time range to **Last 15 minutes** (top right)
-2. Point out the steady traffic pattern
-3. Say: "Let's keep this open and come back after we break something"
+2. Use the **service** dropdown variable (top) to filter to a specific service, or leave as `All`
+3. Point out the steady traffic pattern
+4. Say: "Let's keep this open and come back after we break something"
 
 ---
 
@@ -40,17 +51,25 @@ kubectl -n otel-demo port-forward svc/frontend-proxy 8080:8080
 
 **Open:** http://localhost:8080/grafana/d/W2gX2zHVk48/spanmetrics-demo-dashboard
 
-> "This dashboard turns traces INTO metrics. The OpenTelemetry Collector automatically computes request rates, error rates, and latency percentiles from spans."
+> "This dashboard turns traces INTO metrics. The OpenTelemetry Collector's spanmetrics connector automatically computes request rates, error rates, and latency percentiles from span data — no extra code needed."
 
 ### What to point out:
 
-- **Top 3x3 Service Latency (p95)** — "These are the 3 slowest services at the 95th percentile. In a healthy system, they're all fast."
-- **Top 7 Services Mean Rate** — "Request throughput per service – you can see which services handle the most traffic."
-- **Top 7 Services Mean ERROR Rate** — "Error rates per service – all flat at zero right now."
-- **Top 7 Highest Endpoint Latencies** — "Individual endpoint latencies – useful for spotting slow API routes."
+**Row 1 – Service Level (Throughput and Latencies):**
+- **Top 3x3 Service Latency (p95)** — gauge showing the 3 highest p95 latencies. In a healthy state, the busiest services (`ProductCatalogService/GetProduct`, `valkey-cart`, `postgresql`) are still in the low millisecond range.
+- **Top 7 Services Mean Rate** — bar gauge showing request throughput per service. `GET` (frontend) and `ProductCatalogService/GetProduct` are the highest.
+- **Top 7 Services Mean ERROR Rate** — bar gauge of error rates. Should be near-zero when healthy.
+
+**Row 2 – Span Names Level (Throughput):**
+- **Top 7 span_names and Errors (APM Table)** — table view showing operations ranked by throughput and error count. Great for quickly spotting which operations have the most errors.
+
+**Row 3 – Span Name Level (Latencies):**
+- **Top 3x3 span_name Latency (p95)** — gauge showing individual endpoint latencies at p95.
+- **Top 7 Highest Endpoint Latencies Mean Over Range** — bar gauge of the slowest endpoints.
+- **Top 7 Latencies Over Range** — timeseries of latency trends for the slowest endpoints.
 
 ### Key teaching point:
-> "These metrics are derived from traces – you didn't have to add any Prometheus metrics code. The Collector's spanmetrics connector computes them automatically."
+> "All these metrics come from `traces_span_metrics_duration_milliseconds` and `traces_span_metrics_calls_total` — generated by the Collector's spanmetrics connector from raw traces. You didn't write a single line of Prometheus metrics code."
 
 ---
 
@@ -58,20 +77,35 @@ kubectl -n otel-demo port-forward svc/frontend-proxy 8080:8080
 
 **Open:** http://localhost:8080/grafana/d/febljk0a32qyoa/apm-dashboard-jaeger-prometheus-opensearch
 
-> "This is a full APM view. It combines all three signals – traces from Jaeger, metrics from Prometheus, and logs from OpenSearch."
+> "This is a full APM view. It combines all three signals — traces from Jaeger, metrics from Prometheus, and logs from OpenSearch — in one dashboard."
 
 ### What to point out:
 
-- **Service dropdown** (top) — Select `checkoutservice`
-- **Duration** panel — "Average and p99 latency for this service"
-- **Error** panel — "Error rate over time"
-- **Request Rate** panel — "Throughput"
-- **HTTP Operations** — "Breakdown by HTTP endpoint"
-- **gRPC Operations** — "Breakdown by gRPC method"
-- **Outbound Services** — "Which downstream services does checkout call? You can see payment, shipping, cart, etc."
+1. **Service dropdown** (top) — Select `checkout`. The **Latest metrics received** stat panel shows when Prometheus last scraped metrics for this service.
+
+**Row: Server RED Metrics:**
+- **Duration** — timeseries of latency over time
+- **Error** — timeseries of error rate
+- **Request Rate** — timeseries of throughput
+- **Alerts** — any configured alerting rules
+
+**Row: HTTP/gRPC Operations:**
+- **HTTP Operations** — table showing HTTP endpoints, method, status codes, rates, and latencies
+- **gRPC Operations** — table showing gRPC methods (e.g., `oteldemo.CheckoutService/PlaceOrder`)
+
+**Row: Outbound Services and Databases:**
+- **Outbound HTTP Services** — which HTTP services does checkout call?
+- **Outbound Databases** — any database calls
+- **Outbound gRPC Services** — downstream gRPC calls (payment, shipping, cart, currency, product-catalog)
+
+**Row: Logs:**
+- OpenSearch log entries for the selected service
+
+**Row: Traces:**
+- Recent traces from Jaeger for the selected service
 
 ### Key teaching point:
-> "This is the RED method – Rate, Errors, Duration. With OpenTelemetry, you get this for every service, in every language, with the same dashboard."
+> "This is the RED method — Rate, Errors, Duration. With OpenTelemetry, you get this for every service, in every language, with the same dashboard. And you can correlate metrics → logs → traces in one view."
 
 ---
 
@@ -80,44 +114,47 @@ kubectl -n otel-demo port-forward svc/frontend-proxy 8080:8080
 ### Step 1: Keep the Demo Dashboard open
 **Open:** http://localhost:8080/grafana/d/W2gX2zHVk/demo-dashboard
 
-Set auto-refresh to **5s** (top right → refresh icon → 5s)
+Set auto-refresh to **5s** (top right → click the refresh dropdown → select `5s`)
 
 ### Step 2: Run break.sh in terminal
 ```bash
 ./scripts/break.sh
 ```
+This enables the `paymentFailure` feature flag. The payment service starts returning errors on the `oteldemo.PaymentService/Charge` operation.
 
 ### Step 3: Watch the dashboard (wait 30-60 seconds)
 
 > "Watch the Error Rate panel..."
 
 **What the audience will see:**
-- **Error Rate by Span Name** — A red spike appears for `payment` / `checkout` operations
-- **Average Duration by Span Name** — Duration may spike for checkout (waiting for failed payment)
-- **Log Records by Severity** — ERROR log count increases
+- **Error Rate by Span Name** — error spikes appear for `POST` operations, `oteldemo.CheckoutService/PlaceOrder`, `resolveBoolean` (flagd resolving the failure flag)
+- **Average Duration by Span Name** — checkout duration may increase as it retries/handles the payment error
+- **Log Records by Severity** — ERROR count increases in the table
 
 ### Step 4: Switch to Spanmetrics Dashboard
 **Open:** http://localhost:8080/grafana/d/W2gX2zHVk48/spanmetrics-demo-dashboard
 
-- **Top 7 Services Mean ERROR Rate** — `paymentservice` now has a visible error rate
-- **Top 3x3 Service Latency** — checkout latency may spike
+- **Top 7 Services Mean ERROR Rate** — `oteldemo.PaymentService/Charge` and `oteldemo.CheckoutService/PlaceOrder` now show visible error rates
+- **Top 7 span_names and Errors (APM Table)** — error counts appear next to the affected operations
 
 ### Step 5: Drill into the APM Dashboard
 **Open:** http://localhost:8080/grafana/d/febljk0a32qyoa/apm-dashboard-jaeger-prometheus-opensearch
 
-1. Select **Service:** `checkoutservice`
-2. **Error panel** shows the spike
-3. **Outbound Services** — shows `payment` is the failing dependency
+1. Select **Service:** `checkout`
+2. **Error panel** — shows the error rate spike
+3. **gRPC Operations table** — `oteldemo.CheckoutService/PlaceOrder` shows increased error rate
+4. **Outbound gRPC Services** — `oteldemo.PaymentService/Charge` shows as failing
+5. **Traces row** — recent traces show errors
 
 ### Step 6: Find the trace in Jaeger (via Grafana Explore)
 1. Click **Explore** (compass icon, left sidebar)
 2. Select **Jaeger** datasource
-3. **Service:** `checkoutservice`
-4. Click **Run query**
-5. Click on a red/error trace
+3. **Service:** `checkout` → **Run query**
+4. Look for traces with red error indicators
+5. Click on an error trace
 6. Walk through the waterfall:
-   - `checkoutservice` → `paymentservice` → **ERROR span**
-   - Click the error span → show error tags and message
+   - `oteldemo.CheckoutService/PlaceOrder` → `oteldemo.PaymentService/Charge` → **ERROR span**
+   - Click the error span → show the `otel.status_code: ERROR` tag and error message
 
 > Ask the audience: **"We broke one service. How many dashboards showed us the problem? All of them. That's the power of correlated observability."**
 
@@ -125,7 +162,7 @@ Set auto-refresh to **5s** (top right → refresh icon → 5s)
 
 ## Scene 5: Heal It – Watch Recovery (2 min)
 
-### Step 1: Keep a dashboard open with 5s auto-refresh
+### Step 1: Keep the Demo Dashboard open with 5s auto-refresh
 
 ### Step 2: Run heal.sh
 ```bash
@@ -133,9 +170,10 @@ Set auto-refresh to **5s** (top right → refresh icon → 5s)
 ```
 
 ### Step 3: Watch the recovery
-- Error rates drop back to zero
-- Latencies return to normal
-- Logs go back to INFO-only
+- **Error Rate** panels drop back toward zero
+- **Duration** returns to normal
+- **Log Records by Severity** — ERROR count stops growing
+- New traces in **Explore → Jaeger** show healthy (no red)
 
 > "One command to break, one command to heal. The observability stack showed us the problem in seconds, not hours."
 
@@ -149,9 +187,18 @@ Set auto-refresh to **5s** (top right → refresh icon → 5s)
 
 ### What to point out:
 
-- **GetCart Latency Heatmap with Exemplars** — "Each dot on this heatmap is an exemplar – a specific trace that contributed to that metric bucket."
-- **Click on a dot** → it opens the trace in Jaeger
-- "You see a latency spike at p95? Click the dot, and you're looking at the EXACT request that was slow."
+**Row: GetCart Exemplars:**
+- **GetCart Latency Heatmap with Exemplars** — a heatmap showing `app_cart_get_cart_latency_seconds` distribution over time. Each diamond-shaped dot is an exemplar — a link to a specific trace that contributed to that metric bucket. Currently p95 GetCart latency is ~4.75ms.
+- **95th Pct Cart GetCart Latency with Exemplars** — timeseries of p95 latency with exemplar dots overlaid.
+
+**Row: AddItem Exemplars:**
+- **AddItem Latency Heatmap with Exemplars** — same for the `AddItem` operation using `app_cart_add_item_latency_seconds`.
+- **95th Pct Cart AddItem Latency with Exemplars** — p95 AddItem latency with exemplars.
+
+### Live demo:
+1. Hover over a dot on the heatmap — shows the exemplar metadata (trace ID, span ID)
+2. Click the dot → it opens the trace in Jaeger
+3. You're now looking at the EXACT request that caused that specific latency data point
 
 ### Key teaching point:
 > "With traditional monitoring, you see 'p99 latency is high' but you don't know WHY. With exemplars, you click the spike and land on the exact trace. Metrics tell you WHAT happened, traces tell you WHY."
@@ -166,13 +213,48 @@ Set auto-refresh to **5s** (top right → refresh icon → 5s)
 
 ### What to point out:
 
-- **Spans received vs exported** — "Are we losing data? Is the pipeline keeping up?"
-- **Drop Rate** — "If this goes above zero, you're losing telemetry"
-- **Export errors** — "Is the backend (Jaeger/Prometheus) healthy?"
-- **Queue length** — "Is the Collector backing up?"
+**Overview row:**
+- Stats table showing each collector instance
+- **Spans** (stat) — total spans received. Currently ~38 spans/sec across all services.
+- **Span Errors** (gauge) — should be 0%
+- **Logs** (stat) — log records received
+- **Log Errors** (gauge) — should be 0%
+- **Metrics** (stat) — metric data points received
+- **Metric Errors** (gauge) — should be 0%
+
+**Processor section:**
+- **Drop Rate** gauges for spans, logs, and metrics — should all be 0%. If any goes above zero, the pipeline is losing data.
+
+**Exporter section:**
+- **Spans/Logs/Metrics exported** — matching what was received
+- **Export Errors** — should be 0%
+
+**Collector row (expandable):**
+- **CPU Usage**, **Memory Usage (RSS)**, **Uptime** — health of the collector process itself
+
+**Receivers / Processors / Exporters rows (expandable):**
+- Detailed tables showing per-receiver, per-processor, and per-exporter stats
+
+**Logs row (expandable):**
+- **OpenTelemetry Collector Logs** — the collector's own logs from OpenSearch
 
 ### Key teaching point:
-> "In production, this is critical. You need to monitor the monitor. If your Collector drops spans, you're flying blind and don't even know it."
+> "In production, this is critical. You need to monitor the monitor. If your Collector drops spans, you're flying blind and don't even know it. This dashboard is your early warning system."
+
+---
+
+## Bonus: PostgreSQL Dashboard (1 min)
+
+**Open:** http://localhost:8080/grafana/d/xHhbQmdjA/postgresql
+
+- **QPS** — queries per second hitting the product catalog's PostgreSQL database
+- **Rows** — row operations over time
+- **Buffers** — buffer cache performance
+- **Cache hit ratio** — should be high (>90%)
+- **Conflicts/Deadlocks** — should be zero
+- **Active connections** — number of open connections
+
+> "Even the database is observable via OpenTelemetry. The product catalog service's PostgreSQL instance exports metrics that show up here."
 
 ---
 
@@ -182,19 +264,22 @@ Set auto-refresh to **5s** (top right → refresh icon → 5s)
 |---|---|---|
 | Demo Dashboard | http://localhost:8080/grafana/d/W2gX2zHVk/demo-dashboard | Overview, break/heal demo |
 | Spanmetrics | http://localhost:8080/grafana/d/W2gX2zHVk48/spanmetrics-demo-dashboard | Service latencies, error rates |
-| APM Dashboard | http://localhost:8080/grafana/d/febljk0a32qyoa/apm-dashboard-jaeger-prometheus-opensearch | Per-service deep dive |
+| APM Dashboard | http://localhost:8080/grafana/d/febljk0a32qyoa/apm-dashboard-jaeger-prometheus-opensearch | Per-service deep dive (all 3 signals) |
 | Cart Exemplars | http://localhost:8080/grafana/d/ce6sd46kfkglca/cart-service-exemplars | Metrics-to-traces link |
 | OTel Collector | http://localhost:8080/grafana/d/otel-demo_otel-collector_dashboard/opentelemetry-collector | Pipeline health |
 | PostgreSQL | http://localhost:8080/grafana/d/xHhbQmdjA/postgresql | DB metrics |
-| Linux Host | http://localhost:8080/grafana/d/otel-demo-hostmetrics/linux | Node-level metrics |
-| NGINX | http://localhost:8080/grafana/d/6fb665e0-cb81-40a5-bd21-a9485c5477b4/image-provider-nginx-metrics | Image provider metrics |
+| Linux Host | http://localhost:8080/grafana/d/otel-demo-hostmetrics/linux | Node CPU, memory, disk, network |
+| NGINX | http://localhost:8080/grafana/d/6fb665e0-cb81-40a5-bd21-a9485c5477b4/image-provider-nginx-metrics | Image provider connections/requests |
 
 ---
 
 ## Speaker Tips
 
 - **Set auto-refresh to 5s** before the break/heal demo so changes appear live
-- **Use Last 15 minutes** time range – wide enough to see trends, narrow enough to see the spike
-- **Pre-open dashboard tabs** before the talk so you just switch tabs, no typing URLs
-- **Demo Dashboard → Spanmetrics → APM → Explore/Jaeger** is a natural drill-down flow
-- The **Exemplars** scene is a crowd-pleaser – practise the click-to-trace flow beforehand
+- **Use Last 15 minutes** time range — wide enough to see trends, narrow enough to see the spike
+- **Pre-open 5 browser tabs** before the talk: Demo Dashboard, Spanmetrics, APM, Cart Exemplars, Explore (Jaeger)
+- **Demo flow:** Demo Dashboard → Spanmetrics → APM → Break → watch dashboards → Explore/Jaeger → Heal → Exemplars → Collector
+- The **Exemplars** click-to-trace is a crowd-pleaser — practise beforehand
+- The **Service Dependency** node graph on the Demo Dashboard is great for showing architecture
+- In the APM Dashboard, the **service dropdown** lets you pivot between services quickly
+- If dashboards show "No data", check the **time range** and **service variable** at the top
