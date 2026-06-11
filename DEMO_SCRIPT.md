@@ -132,26 +132,47 @@ App (SDK) → OTLP → [Collector] → Jaeger (traces)
 **Explain while it runs:**
 
 - "All I did was toggle a feature flag – no code changes, no redeployment"
-- "The payment service will now start returning errors"
+- "The payment service will now reject 100% of charge requests"
 
-**Wait ~30 seconds, then switch to Jaeger:**
+### What actually happens (know this!):
 
-1. Select **`checkoutservice`** → Find Traces
-2. **Look for red error spans** – they'll be immediately visible
+**Web Store (http://localhost:8080/):**
+- Browsing products, viewing cart — **all still work normally**
+- Clicking **"Place Order"** — the button appears to do nothing. The API returns a 500 error, but the React frontend has no visible error message. The user is stuck on the cart page.
+- This is realistic! In production, a broken backend often means the UI just silently fails.
+
+**[Speaker tip]** Don't demo the break via the Web Store UI — it's anticlimactic. Instead, use it as a story:
+
+> "Imagine a user just clicked Place Order and nothing happened. No error page, no feedback. They'd probably try again, and again. Meanwhile your support queue is filling up. How do you find the problem?"
+
+### Where the break IS dramatic — the observability tools:
+
+**Step 1: Open Jaeger UI** (http://localhost:8080/jaeger/ui/)
+
+1. Select **Service:** `checkout` → Click **Find Traces**
+2. **Red error traces** are immediately visible — you can't miss them
 3. Click on an error trace
 
-**Walk through the broken trace:**
+**Step 2: Walk through the broken trace waterfall:**
 
-- "See the red span? That's `paymentservice`"
-- "The error propagates up – `checkoutservice` fails because `paymentservice` failed"
-- Click on the error span → show the error tags/logs
-- "OpenTelemetry captured the error message, the stack trace, the HTTP status code"
+- Root span: `oteldemo.CheckoutService/PlaceOrder` — **red, ERROR**
+- Child span: `oteldemo.PaymentService/Charge` — **red, ERROR**
+- Click the payment error span → show the tags:
+  - `otel.status_code: ERROR`
+  - `otel.status_description: "Payment request failed. Invalid token. app.loyalty.level=gold"`
+- The parent span shows: `"failed to charge card: could not charge the card"`
+- "OpenTelemetry captured the exact error message, which service failed, and where in the call chain"
+
+**Step 3: Show Grafana Demo Dashboard** (http://localhost:8080/grafana/d/W2gX2zHVk/demo-dashboard)
+
+- The **Error Rate by Span Name** panel now shows spikes for `POST`, `PlaceOrder`, `Charge`
+- The load generator is still driving traffic, so the error rate is continuous and obvious
 
 **Ask the audience:**
 
-> "Which service is the problem? How long did it take you to find it?"
+> "The user saw nothing. But we found the problem in 10 seconds. Which service is failing? What's the error message? Without distributed tracing, you'd be grepping through logs across 20 services."
 
-**Key point:** "Without distributed tracing, you'd be grepping through logs across 15 services. With OpenTelemetry, it took us 10 seconds."
+**Key point:** "This is why observability matters — the frontend gave the user zero information, but OpenTelemetry told us exactly what broke, where, and why."
 
 ---
 

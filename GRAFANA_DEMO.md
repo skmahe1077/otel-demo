@@ -127,9 +127,11 @@ This enables the `paymentFailure` feature flag. The payment service starts retur
 > "Watch the Error Rate panel..."
 
 **What the audience will see:**
-- **Error Rate by Span Name** — error spikes appear for `POST` operations, `oteldemo.CheckoutService/PlaceOrder`, `resolveBoolean` (flagd resolving the failure flag)
-- **Average Duration by Span Name** — checkout duration may increase as it retries/handles the payment error
+- **Error Rate by Span Name** — error spikes appear for `POST`, `oteldemo.CheckoutService/PlaceOrder`, `oteldemo.PaymentService/Charge`
+- **Average Duration by Span Name** — checkout duration may increase as it handles the payment error
 - **Log Records by Severity** — ERROR count increases in the table
+
+> **Note:** In the Web Store UI, clicking "Place Order" silently fails (the React frontend has no error handler for checkout failures). This is actually a great teaching moment: "The user sees nothing — but our dashboards see everything. That's why observability matters."
 
 ### Step 4: Switch to Spanmetrics Dashboard
 **Open:** http://localhost:8080/grafana/d/W2gX2zHVk48/spanmetrics-demo-dashboard

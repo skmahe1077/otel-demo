@@ -6,7 +6,7 @@ NAMESPACE="${NAMESPACE:-otel-demo}"
 CONFIGMAP="flagd-config"
 FLAG="paymentFailure"
 
-echo "==> Disabling ${FLAG} feature flag..."
+echo "==> Disabling ${FLAG} feature flag (variant: off)..."
 
 kubectl get configmap "${CONFIGMAP}" -n "${NAMESPACE}" -o json \
   | python3 -c "
