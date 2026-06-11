@@ -3,7 +3,7 @@
 **URL:** http://localhost:8080/grafana/
 **Pre-requisite:** Port-forward is running:
 ```bash
-kubectl -n otel-demo port-forward svc/frontend-proxy 8080:8080
+./scripts/port-forward.sh
 ```
 
 **Datasources (pre-provisioned):**
